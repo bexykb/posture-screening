@@ -1,5 +1,5 @@
 streamlit
-mediapipe
-opencv-python-headless==4.12.0.88
+mediapipe==0.10.21
+opencv-python-headless==4.11.0.86
 pillow
-numpy<2
+numpy==1.26.4
