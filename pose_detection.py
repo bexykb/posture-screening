@@ -1,4 +1,4 @@
-
+import streamlit as st
 import io
 import os
 
@@ -96,102 +96,33 @@ def detect_pose(image_bytes, visibility_threshold=0.5):
 
     # Create MediaPipe image and run detection
     try:
-        mp_image = MPImage(
-            image_format=ImageFormat.SRGB,
-            data=rgb_image
-        )
+      try:
+    rgb_image = np.ascontiguousarray(
+        rgb_image, dtype=np.uint8
+    )
 
-        options = vision.PoseLandmarkerOptions(
-            base_options=python.BaseOptions(
-                model_asset_path=MODEL_PATH
-            ),
-            running_mode=vision.RunningMode.IMAGE,
-            num_poses=1,
-            min_pose_detection_confidence=0.5,
-            min_pose_presence_confidence=0.5
-        )
+    mp_image = mp.Image(
+        image_format=mp.ImageFormat.SRGB,
+        data=rgb_image
+    )
 
-        with vision.PoseLandmarker.create_from_options(
-            options
-        ) as landmarker:
-            results = landmarker.detect(mp_image)
+    st.write("MediaPipe version:", mp.__version__)
+    st.write("Image shape:", rgb_image.shape)
+    st.write("Image dtype:", rgb_image.dtype)
 
-    except Exception as exc:
-        return None, (
-            f"Pose detection failed: {type(exc).__name__}: {exc}"
-        )
+    options = vision.PoseLandmarkerOptions(
+        base_options=python.BaseOptions(
+            model_asset_path=MODEL_PATH
+        ),
+        running_mode=vision.RunningMode.IMAGE,
+        num_poses=1
+    )
 
-    # Check detection result
-    if not results.pose_landmarks:
-        return None, (
-            "No body landmarks detected. Try a clear photograph "
-            "with the person's body visible and good lighting."
-        )
+    with vision.PoseLandmarker.create_from_options(
+        options
+    ) as landmarker:
+        results = landmarker.detect(mp_image)
 
-    points = results.pose_landmarks[0]
-
-    # Extract landmarks
-    landmarks = {}
-
-    for name, index in LANDMARK_INDICES.items():
-        point = points[index]
-
-        visibility = float(
-            getattr(point, "visibility", 1.0)
-        )
-
-        landmarks[name] = {
-            "x": float(point.x),
-            "y": float(point.y),
-            "z": float(point.z),
-            "visibility": visibility,
-            "visible": visibility >= visibility_threshold
-        }
-
-    # Annotate image
-    annotated = rgb_image.copy()
-
-    for start, end in POSE_CONNECTIONS:
-        p1 = points[start]
-        p2 = points[end]
-
-        x1 = int(p1.x * width)
-        y1 = int(p1.y * height)
-        x2 = int(p2.x * width)
-        y2 = int(p2.y * height)
-
-        if (
-            0 <= x1 < width and 0 <= y1 < height
-            and 0 <= x2 < width and 0 <= y2 < height
-        ):
-            cv2.line(
-                annotated,
-                (x1, y1),
-                (x2, y2),
-                (0, 255, 0),
-                2
-            )
-
-    for point in points:
-        x = int(point.x * width)
-        y = int(point.y * height)
-
-        if 0 <= x < width and 0 <= y < height:
-            cv2.circle(
-                annotated,
-                (x, y),
-                4,
-                (255, 0, 0),
-                -1
-            )
-
-    # Return the same structure expected by your app
-    pose_data = {
-        "original_image": rgb_image,
-        "annotated_image": annotated,
-        "height": height,
-        "width": width,
-        "landmarks": landmarks
-    }
-
-    return pose_data, None
+except Exception as exc:
+    import traceback
+    return None, traceback.format_exc()
