@@ -1,13 +1,18 @@
+
 import io
 import os
 
 import cv2
 import mediapipe as mp
 import numpy as np
-from PIL import Image
+from PIL import Image as PILImage
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from mediapipe.tasks.python.vision.core.image import (
+    Image as MPImage,
+    ImageFormat
+)
 
 
 MODEL_PATH = os.path.join(
@@ -15,14 +20,18 @@ MODEL_PATH = os.path.join(
     "pose_landmarker.task"
 )
 
+
 POSE_CONNECTIONS = [
     (0, 1), (1, 2), (2, 3), (3, 7),
     (0, 4), (4, 5), (5, 6), (6, 8),
-    (9, 10), (11, 12),
-    (11, 13), (13, 15), (15, 17),
-    (15, 19), (15, 21), (17, 19),
-    (12, 14), (14, 16), (16, 18),
-    (16, 20), (16, 22), (18, 20),
+    (9, 10),
+    (11, 12),
+    (11, 13), (13, 15),
+    (15, 17), (15, 19), (15, 21),
+    (17, 19),
+    (12, 14), (14, 16),
+    (16, 18), (16, 20), (16, 22),
+    (18, 20),
     (11, 23), (12, 24), (23, 24),
     (23, 25), (25, 27), (27, 29),
     (29, 31), (27, 31),
@@ -31,30 +40,64 @@ POSE_CONNECTIONS = [
 ]
 
 
-def detect_pose(image_bytes, visibility_threshold=0.5):
-    """Detect pose landmarks using MediaPipe Tasks."""
+LANDMARK_INDICES = {
+    "nose": 0,
+    "left_ear": 7,
+    "right_ear": 8,
+    "left_shoulder": 11,
+    "right_shoulder": 12,
+    "left_elbow": 13,
+    "right_elbow": 14,
+    "left_wrist": 15,
+    "right_wrist": 16,
+    "left_hip": 23,
+    "right_hip": 24,
+    "left_knee": 25,
+    "right_knee": 26,
+    "left_ankle": 27,
+    "right_ankle": 28,
+    "left_heel": 29,
+    "right_heel": 30,
+    "left_foot_index": 31,
+    "right_foot_index": 32
+}
 
+
+def detect_pose(image_bytes, visibility_threshold=0.5):
+    """Detect body landmarks from uploaded image bytes."""
+
+    # Check model file
     if not os.path.isfile(MODEL_PATH):
         return None, (
-            "Pose model not found. Ensure pose_landmarker.task "
-            "is in the project folder."
+            "Pose model not found. Add pose_landmarker.task "
+            "to the same project folder as pose_detection.py."
         )
 
+    # Load image
     try:
-        image = Image.open(
+        if hasattr(image_bytes, "read"):
+            image_bytes = image_bytes.read()
+
+        image = PILImage.open(
             io.BytesIO(image_bytes)
         ).convert("RGB")
 
-        rgb_image = np.array(image, dtype=np.uint8)
+        rgb_image = np.ascontiguousarray(
+            np.asarray(image, dtype=np.uint8)
+        )
 
-    except Exception:
-        return None, "Unable to read the uploaded image."
+    except Exception as exc:
+        return None, f"Unable to read uploaded image: {exc}"
 
     height, width = rgb_image.shape[:2]
 
+    if height == 0 or width == 0:
+        return None, "Uploaded image is empty."
+
+    # Create MediaPipe image and run detection
     try:
-        mp_image = mp.Image(
-            image_format=mp.ImageFormat.SRGB,
+        mp_image = MPImage(
+            image_format=ImageFormat.SRGB,
             data=rgb_image
         )
 
@@ -74,41 +117,23 @@ def detect_pose(image_bytes, visibility_threshold=0.5):
             results = landmarker.detect(mp_image)
 
     except Exception as exc:
-        return None, f"Pose detection failed: {exc}"
+        return None, (
+            f"Pose detection failed: {type(exc).__name__}: {exc}"
+        )
 
+    # Check detection result
     if not results.pose_landmarks:
         return None, (
-            "No body landmarks detected. Try a clear image "
-            "with the person visible and good lighting."
+            "No body landmarks detected. Try a clear photograph "
+            "with the person's body visible and good lighting."
         )
 
     points = results.pose_landmarks[0]
 
-    landmark_indices = {
-        "nose": 0,
-        "left_ear": 7,
-        "right_ear": 8,
-        "left_shoulder": 11,
-        "right_shoulder": 12,
-        "left_elbow": 13,
-        "right_elbow": 14,
-        "left_wrist": 15,
-        "right_wrist": 16,
-        "left_hip": 23,
-        "right_hip": 24,
-        "left_knee": 25,
-        "right_knee": 26,
-        "left_ankle": 27,
-        "right_ankle": 28,
-        "left_heel": 29,
-        "right_heel": 30,
-        "left_foot_index": 31,
-        "right_foot_index": 32
-    }
-
+    # Extract landmarks
     landmarks = {}
 
-    for name, index in landmark_indices.items():
+    for name, index in LANDMARK_INDICES.items():
         point = points[index]
 
         visibility = float(
@@ -123,14 +148,17 @@ def detect_pose(image_bytes, visibility_threshold=0.5):
             "visible": visibility >= visibility_threshold
         }
 
+    # Annotate image
     annotated = rgb_image.copy()
 
     for start, end in POSE_CONNECTIONS:
         p1 = points[start]
         p2 = points[end]
 
-        x1, y1 = int(p1.x * width), int(p1.y * height)
-        x2, y2 = int(p2.x * width), int(p2.y * height)
+        x1 = int(p1.x * width)
+        y1 = int(p1.y * height)
+        x2 = int(p2.x * width)
+        y2 = int(p2.y * height)
 
         if (
             0 <= x1 < width and 0 <= y1 < height
@@ -145,4 +173,25 @@ def detect_pose(image_bytes, visibility_threshold=0.5):
             )
 
     for point in points:
-        x, y = int(point.x * width), int(point.y * height)
+        x = int(point.x * width)
+        y = int(point.y * height)
+
+        if 0 <= x < width and 0 <= y < height:
+            cv2.circle(
+                annotated,
+                (x, y),
+                4,
+                (255, 0, 0),
+                -1
+            )
+
+    # Return the same structure expected by your app
+    pose_data = {
+        "original_image": rgb_image,
+        "annotated_image": annotated,
+        "height": height,
+        "width": width,
+        "landmarks": landmarks
+    }
+
+    return pose_data, None
