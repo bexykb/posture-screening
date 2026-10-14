@@ -1,4 +1,6 @@
 
+%%writefile pose_detection.py
+
 import io
 import os
 
@@ -31,12 +33,11 @@ def detect_pose(image_bytes, visibility_threshold=0.5):
 
     height, width = rgb_image.shape[:2]
 
-image_rgb = np.ascontiguousarray(image_rgb, dtype=np.uint8)
-
-image_mp = mp.Image(
-    image_format=mp.ImageFormat.SRGB,
-    data=image_rgb
-)
+    try:
+        mp_image = mp.Image(
+            image_format=mp.ImageFormat.SRGB,
+            data=rgb_image
+        )
 
         options = vision.PoseLandmarkerOptions(
             base_options=python.BaseOptions(
